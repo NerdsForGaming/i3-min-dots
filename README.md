@@ -4,10 +4,19 @@ A grayscale i3 rice for Arch Linux. Configs for i3, polybar, rofi,
 picom, kitty, alacritty, dunst, and eww, plus an installer and a
 self-updater that prompts you on login when a new version ships.
 
-## Install
+## Install / update
+
+One-liner (works on a fresh machine and re-runs as an updater when
+`~/rice` already exists):
 
 ```sh
-git clone <repo-url> ~/rice
+curl -fsSL https://raw.githubusercontent.com/NerdsForGaming/i3-min-dots/main/bootstrap.sh | bash
+```
+
+Or manually:
+
+```sh
+git clone https://github.com/NerdsForGaming/i3-min-dots.git ~/rice
 cd ~/rice
 ./install.sh
 ```

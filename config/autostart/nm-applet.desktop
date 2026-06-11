@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Network
+NoDisplay=true
+Hidden=true
+X-GNOME-Autostart-enabled=false
+# Hidden=true tells dex/xdg-autostart to skip /etc/xdg/autostart/nm-applet.desktop.
+# The rice replaces nm-applet's tray icon with a polybar custom module +
+# themed rofi picker. nmcli still does the actual work.

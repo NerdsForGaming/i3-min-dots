@@ -18,7 +18,8 @@ warn() { printf '\033[1;31m!!\033[0m %s\n' "$*" >&2; }
 REQUIRED_PKGS=(i3-wm polybar rofi picom kitty alacritty dunst
                feh pamixer brightnessctl playerctl maim xclip
                xss-lock i3lock notification-daemon
-               jq ripgrep git)
+               networkmanager bluez bluez-utils
+               jq ripgrep git curl)
 OPTIONAL_PKGS=(eww ttf-jetbrains-mono-nerd ttf-nerd-fonts-symbols-mono
                papirus-icon-theme zsh starship eza bat fzf zoxide
                tmux autorandr dex python-pywal redshift hsetroot
@@ -81,6 +82,24 @@ link_bin() {
     log "Linked rice scripts into ~/.local/bin/"
 }
 
+# Merge ./config/autostart/*.desktop into ~/.config/autostart/ without
+# replacing the whole dir (so other apps' overrides are preserved).
+link_autostart() {
+    local src="$RICE_DIR/config/autostart"
+    [ -d "$src" ] || return 0
+    mkdir -p "$HOME/.config/autostart"
+    for f in "$src"/*.desktop; do
+        [ -e "$f" ] || continue
+        local base
+        base=$(basename "$f")
+        local dst="$HOME/.config/autostart/$base"
+        [ -L "$dst" ] && rm "$dst"
+        [ -e "$dst" ] && mv "$dst" "$dst.bak.$(ts)"
+        ln -s "$f" "$dst"
+        log "Linked autostart override: $base"
+    done
+}
+
 # ---------------------------------------------------------------- extras
 ensure_appimages() {
     mkdir -p "$APPIMAGE_DIR"
@@ -108,6 +127,7 @@ main() {
     log "Installing rice from $RICE_DIR"
     install_pkgs
     link_configs
+    link_autostart
     link_bin
     ensure_appimages
     install_qylock

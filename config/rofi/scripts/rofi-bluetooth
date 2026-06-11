@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Themed bluetoothctl-driven bluetooth manager. Bound to the polybar
+# bluetooth module's left-click.
+
+set -u
+
+THEME="${RICE_ROFI_THEME:-$HOME/.config/rofi/config.rasi}"
+pick() { rofi -dmenu -i -theme "$THEME" -no-custom -format 's' "$@"; }
+notify() { command -v notify-send >/dev/null && notify-send "$@" || true; }
+
+if ! command -v bluetoothctl >/dev/null; then
+    rofi -e "bluetoothctl not installed.\nInstall bluez and bluez-utils." \
+         -theme "$THEME"
+    exit 1
+fi
+
+powered=$(bluetoothctl show | awk '/Powered:/ {print $2; exit}')
+
+entries=()
+if [ "$powered" = "yes" ]; then
+    entries+=("[~] Bluetooth: ON  → click to turn off")
+    entries+=("[~] Scan 5s for new devices")
+    entries+=("[~] ─── paired ───")
+    while IFS=$' ' read -r _ mac name; do
+        [ -z "$mac" ] && continue
+        is_conn=$(bluetoothctl info "$mac" 2>/dev/null \
+                  | awk '/Connected:/ {print $2; exit}')
+        if [ "$is_conn" = "yes" ]; then
+            entries+=("  $name  [$mac]")
+        else
+            entries+=("  $name  [$mac]")
+        fi
+    done < <(bluetoothctl devices Paired 2>/dev/null)
+else
+    entries+=("[~] Bluetooth: OFF  → click to turn on")
+fi
+
+choice=$(printf '%s\n' "${entries[@]}" | pick -p "  bluetooth" -mesg "Pick a device or [~] action")
+[ -z "$choice" ] && exit 0
+
+case "$choice" in
+    "[~] Bluetooth: ON  → click to turn off")
+        bluetoothctl power off >/dev/null
+        ;;
+    "[~] Bluetooth: OFF  → click to turn on")
+        bluetoothctl power on >/dev/null
+        ;;
+    "[~] Scan 5s for new devices")
+        notify "bluetooth" "Scanning..."
+        bluetoothctl --timeout 5 scan on >/dev/null 2>&1
+        # Re-launch self so the new devices show up.
+        exec "$0"
+        ;;
+    "[~] ─── paired ───")
+        exit 0
+        ;;
+    *)
+        # Extract MAC from "...  [AA:BB:..]"
+        mac=$(printf '%s' "$choice" | sed -nE 's/.*\[([0-9A-F:]+)\].*/\1/p')
+        [ -z "$mac" ] && exit 0
+        is_conn=$(bluetoothctl info "$mac" 2>/dev/null \
+                  | awk '/Connected:/ {print $2; exit}')
+        if [ "$is_conn" = "yes" ]; then
+            bluetoothctl disconnect "$mac" >/dev/null \
+                && notify "bluetooth" "Disconnected $mac"
+        else
+            bluetoothctl connect "$mac" >/dev/null \
+                && notify "bluetooth" "Connected $mac" \
+                || notify "bluetooth" "Connect failed: $mac"
+        fi
+        ;;
+esac
