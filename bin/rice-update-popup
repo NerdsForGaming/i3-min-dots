@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# rice-update-popup — themed rofi prompt offering to update the rice.
+# Usage:  rice-update-popup <local-version> <remote-version>
+
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+source "$SELF_DIR/_rice-common.sh"
+
+LOCAL="${1:-$(rice_local_version || echo ?)}"
+REMOTE="${2:-?}"
+
+THEME="$HOME/.config/rofi/update-popup.rasi"
+
+prompt="$LOCAL → $REMOTE"
+choice=$(printf 'Update dotfiles\nUpdate dotfiles + system\nLater\n' \
+    | rofi -dmenu -i \
+           -theme "$THEME" \
+           -p "$prompt" \
+           -mesg "A new rice version is available. Pick one:" \
+           -no-custom \
+           -format 's' || true)
+
+case "$choice" in
+    "Update dotfiles")
+        # Run in a kitty terminal so the user sees the changelog.
+        kitty --title "rice-update" --hold \
+              -e bash -lc 'RICE_HOLD_TERM=1; rice-update; printf "\nPress Enter to close..."; read -r _' \
+              >/dev/null 2>&1 & disown
+        ;;
+    "Update dotfiles + system")
+        kitty --title "rice-update-full" --hold \
+              -e bash -lc 'RICE_HOLD_TERM=1 rice-update-full' \
+              >/dev/null 2>&1 & disown
+        ;;
+    *)
+        # "Later" or empty (user dismissed). Mark snoozed so the
+        # startup checker doesn't pester again until tomorrow.
+        mkdir -p "$HOME/.cache/rice"
+        date +%s > "$HOME/.cache/rice/snoozed-until-$(date +%Y-%m-%d)"
+        ;;
+esac

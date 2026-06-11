@@ -1,0 +1,36 @@
+/* Compact rofi prompt shown by rice-update-check when an update is
+   available. Imports the main theme so colours stay in sync.        */
+
+@import "~/.config/rofi/config.rasi"
+
+window {
+    width:        28em;
+    border:       2px;
+    border-color: @gold;
+    location:     northeast;
+    anchor:       northeast;
+    x-offset:     -16px;
+    y-offset:     48px;
+}
+
+mainbox { children: [ inputbar, message, listview ]; }
+
+inputbar {
+    padding:          12px 16px;
+    children:         [ prompt ];
+    background-color: @surface;
+}
+
+prompt {
+    str:        "  rice update available";
+    text-color: @gold;
+    font:       "JetBrains Mono Bold 11";
+}
+
+listview {
+    lines:    3;
+    padding:  6px 4px;
+    spacing:  2px;
+}
+
+element { padding: 8px 14px; }

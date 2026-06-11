@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# rofi script-mode handler for ~/appimages/
+#
+# rofi calls us with no args to list entries, then re-invokes us
+# with the chosen entry as $1 to "execute" it.
+
+APPDIR="${APPIMAGE_DIR:-$HOME/appimages}"
+
+if [ -z "$1" ]; then
+    [ -d "$APPDIR" ] || exit 0
+    # List *.AppImage (and *.appimage) without the extension, sorted.
+    shopt -s nullglob nocaseglob
+    for f in "$APPDIR"/*.AppImage; do
+        name=${f##*/}
+        printf '%s\n' "${name%.*}"
+    done | sort -f
+    exit 0
+fi
+
+shopt -s nullglob nocaseglob
+for f in "$APPDIR"/"$1".AppImage; do
+    [ -x "$f" ] || chmod +x "$f" 2>/dev/null
+    coproc ( "$f" >/dev/null 2>&1 )
+    exit 0
+done
+
+# Fallback: open the directory if nothing matched.
+xdg-open "$APPDIR" >/dev/null 2>&1 &

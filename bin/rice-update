@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# rice-update — pull the rice repo, re-link configs, show what changed.
+
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+source "$SELF_DIR/_rice-common.sh"
+
+QUIET=0
+[ "${1:-}" = "--quiet" ] && QUIET=1
+
+say() { [ "$QUIET" = 1 ] || printf '\033[1;33m::\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;31m!!\033[0m %s\n' "$*" >&2; }
+
+cd "$RICE_DIR"
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    warn "$RICE_DIR is not a git repo. Clone it from your fork first."
+    exit 2
+fi
+
+if [ -z "${RICE_REPO_URL:-}" ] && ! git remote -v | grep -q origin; then
+    warn "No RICE_REPO_URL set and no 'origin' remote — nothing to pull."
+    exit 2
+fi
+
+OLD_VERSION=$(rice_local_version || echo "?")
+say "Local version: $OLD_VERSION — fetching..."
+
+git fetch --quiet origin "${RICE_BRANCH:-main}" || {
+    warn "git fetch failed."
+    exit 3
+}
+
+if ! git merge-base --is-ancestor "origin/${RICE_BRANCH:-main}" HEAD; then
+    if ! git pull --ff-only --quiet origin "${RICE_BRANCH:-main}"; then
+        warn "Fast-forward failed — you have local changes. Stash or commit them first."
+        exit 4
+    fi
+fi
+
+NEW_VERSION=$(rice_local_version || echo "?")
+say "Now at: $NEW_VERSION"
+
+# Re-link configs in case rice.conf's RICE_CONFIGS list changed or
+# brand new entries were added.
+"$RICE_DIR/install.sh" >/dev/null 2>&1 || true
+
+# Tell i3 to reload so polybar/rofi/etc. configs pick up.
+if command -v i3-msg >/dev/null && pgrep -x i3 >/dev/null; then
+    i3-msg reload >/dev/null 2>&1 || true
+    pkill -USR1 -x polybar 2>/dev/null || true
+fi
+
+# Stash the version transition for the popup to read on next launch.
+mkdir -p "$HOME/.cache/rice"
+printf '%s\n%s\n' "$OLD_VERSION" "$NEW_VERSION" > "$HOME/.cache/rice/last-update"
+
+if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
+    say "Already up to date."
+    exit 0
+fi
+
+# Print the changelog diff between old and new.
+diff_text=$(rice_changelog_between "$OLD_VERSION" || true)
+if [ -z "$diff_text" ]; then
+    say "Updated $OLD_VERSION → $NEW_VERSION. (bug fixes)"
+else
+    say "Updated $OLD_VERSION → $NEW_VERSION:"
+    printf '%s\n' "$diff_text"
+fi

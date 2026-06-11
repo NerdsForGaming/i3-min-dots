@@ -1,0 +1,8 @@
+# User-local rice state (not part of the rice itself).
+config/i3/keybindings.list
+**/*.bak.*
+**/*.pre-restore.*
+
+# pywal-rendered colour files (regenerated locally).
+config/**/colors-*.rasi
+config/**/colors.scss

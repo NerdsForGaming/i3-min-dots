@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# rice-update-check — launched by i3 at startup. Compares local
+# VERSION against the configured remote and pops the themed prompt
+# if they differ. Silent on the happy path.
+#
+# Designed to be cheap: no network access if RICE_REPO_URL is unset
+# or if we already snoozed today.
+
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+source "$SELF_DIR/_rice-common.sh"
+
+# Snoozed for today?
+if [ -f "$HOME/.cache/rice/snoozed-until-$(date +%Y-%m-%d)" ]; then
+    exit 0
+fi
+
+# Nothing to check against?
+[ -z "${RICE_REPO_URL:-}" ] && exit 0
+
+# Wait for network and rofi to be available (i3 just started).
+sleep "${RICE_CHECK_DELAY:-10}"
+
+LOCAL=$(rice_local_version || true)
+REMOTE=$(rice_remote_version || true)
+
+# Connectivity / config failure: stay quiet.
+[ -z "$REMOTE" ] && exit 0
+[ -z "$LOCAL" ] && exit 0
+
+if [ "$LOCAL" = "$REMOTE" ]; then
+    exit 0
+fi
+
+# Different versions — fire the popup. exec into it so the check
+# script exits cleanly.
+exec "$SELF_DIR/rice-update-popup" "$LOCAL" "$REMOTE"

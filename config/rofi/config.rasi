@@ -1,0 +1,160 @@
+configuration {
+    modi:                "drun,appimages:~/.config/rofi/scripts/rofi-appimages,run,window,wallpapers:~/.config/i3/scripts/wallpaper-rofi.sh";
+    show-icons:          true;
+    icon-theme:          "Papirus-Dark";
+    terminal:            "kitty";
+    sidebar-mode:        false;
+    drun-display-format: "{name}";
+    drun-show-actions:   true;
+    display-drun:        "  apps";
+    display-appimages:   "  appimages";
+    display-run:         "  run";
+    display-window:      "  windows";
+    display-wallpapers:  "  wallpapers";
+    matching:            "fuzzy";
+    sort:                true;
+    /* Tab / Shift+Tab cycle modes (more intuitive than Ctrl+Tab).
+       All other default Tab bindings must be cleared first. */
+    kb-row-tab:          "";
+    kb-element-next:     "";
+    kb-element-prev:     "";
+    kb-mode-next:        "Tab";
+    kb-mode-previous:    "ISO_Left_Tab";
+    kb-cancel:           "Escape";
+    kb-secondary-copy:   "";
+}
+
+* {
+    base:         #0e0e10;
+    surface:      #1a1a1d;
+    overlay:      #2e2e34;
+    muted:        #5e5e62;
+    subtle:       #909094;
+    text:         #f2f2f2;
+    love:         #b56565;
+    gold:         #e0c373;
+    rose:         #c8c8c8;
+    pine:         #c8c8c8;
+    foam:         #c8c8c8;
+    iris:         #e0c373;
+    trans:        rgba(0,0,0,0);
+
+    background-color: transparent;
+    text-color:       @text;
+    font:             "JetBrains Mono 11";
+}
+
+window {
+    background-color: @base;
+    border:           2px;
+    border-color:     @iris;
+    border-radius:    0;
+    padding:          0;
+    width:            52em;
+    location:         center;
+    anchor:           center;
+    children:         [ mainbox ];
+}
+
+mainbox {
+    spacing:  0;
+    padding:  0;
+    children: [ inputbar, message, listview, mode-switcher ];
+    background-color: transparent;
+}
+
+inputbar {
+    padding:          14px 18px;
+    spacing:          12px;
+    background-color: @surface;
+    border-radius:    0;
+    children:         [ prompt, entry ];
+}
+
+prompt {
+    text-color:       @iris;
+    font:             "JetBrains Mono Bold 11";
+}
+
+entry {
+    placeholder:       "type to search — Tab to switch tab";
+    placeholder-color: @muted;
+    text-color:        @text;
+    cursor:            text;
+}
+
+message { padding: 0; border: 0; }
+textbox { padding: 8px 18px; text-color: @subtle; background-color: @surface; }
+
+listview {
+    lines:            14;
+    columns:          1;
+    fixed-height:     true;
+    cycle:            true;
+    dynamic:          true;
+    scrollbar:        false;
+    padding:          10px 6px;
+    spacing:          2px;
+    background-color: transparent;
+}
+
+element {
+    padding:          8px 14px;
+    spacing:          12px;
+    border-radius:    0;
+    background-color: transparent;
+    text-color:       @text;
+    cursor:           pointer;
+}
+
+element normal.normal     { background-color: transparent; text-color: @text; }
+element alternate.normal  { background-color: transparent; text-color: @text; }
+element normal.urgent     { text-color: @love; }
+element normal.active     { text-color: @iris; }
+
+element selected.normal {
+    background-color: @iris;
+    text-color:       @base;
+}
+element selected.urgent {
+    background-color: @love;
+    text-color:       @base;
+}
+element selected.active {
+    background-color: @iris;
+    text-color:       @base;
+}
+
+element-icon {
+    size:             1.5em;
+    vertical-align:   0.5;
+    background-color: transparent;
+}
+
+element-text {
+    text-color:       inherit;
+    vertical-align:   0.5;
+    background-color: transparent;
+}
+
+mode-switcher {
+    padding:          6px;
+    spacing:          4px;
+    background-color: @surface;
+    border-radius:    0;
+}
+
+button {
+    padding:          6px 14px;
+    border-radius:    0;
+    background-color: transparent;
+    text-color:       @muted;
+    cursor:           pointer;
+    font:             "JetBrains Mono 10";
+}
+
+button selected {
+    background-color: @iris;
+    text-color:       @base;
+    font:             "JetBrains Mono Bold 10";
+}
