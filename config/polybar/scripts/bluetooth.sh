@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # Polybar bluetooth status — read by [module/bluetooth].
-# Silently no-ops if bluetoothctl isn't installed.
 
 if ! command -v bluetoothctl >/dev/null; then
-    printf '%s\n' ""
+    # Module is still shown so the user can click to learn how to
+    # install bluez. The rofi handler walks them through it.
+    printf '%s\n' "  install"
+    exit 0
+fi
+
+# No controller present? Distinguish "off" vs "no adapter".
+if ! bluetoothctl show 2>/dev/null | grep -q '^Controller'; then
+    printf '%s\n' "󰂲  n/a"
     exit 0
 fi
 
@@ -13,7 +20,6 @@ if [ "$powered" != "yes" ]; then
     exit 0
 fi
 
-# Connected device name, if any.
 connected=$(bluetoothctl devices Connected 2>/dev/null \
             | awk '{$1=$2=""; sub(/^  /,""); print; exit}')
 if [ -n "$connected" ]; then

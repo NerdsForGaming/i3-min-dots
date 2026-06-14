@@ -6,6 +6,10 @@
 # set the mod key to the winkey:
 set $mod Mod4
 
+# i3 requires a font directive. Without it i3 errors on reload with
+# "You did not specify required configuration option font".
+font pango:JetBrains Mono 10
+
 #####################
 # workspace layout: #
 #####################
@@ -236,7 +240,8 @@ bindsym $mod+p exec /home/Odin/.config/i3/scripts/audio_switch_menu.sh
 ## App shortcuts
 bindsym $mod+w exec brave
 bindsym $mod+Shift+w exec librewolf
-bindsym $mod+alt+w exec firefox
+# i3 does not accept the literal string "alt" as a modifier — use Mod1.
+bindsym $mod+Mod1+w exec firefox
 bindsym $mod+n exec /usr/bin/thunar
 #bindsym Print exec scrot ~/%Y-%m-%d-%T-screenshot.png && notify-send "Screenshot saved to ~/$(date +"%Y-%m-%d-%T")-screenshot.png"
 
@@ -305,8 +310,10 @@ exec_always --no-startup-id command -v xsetroot >/dev/null && xsetroot -xcf /usr
 exec_always --no-startup-id ~/.config/i3/scripts/set-wallpaper.sh
 #exec --no-startup-id sleep 1 && feh --bg-fill /usr/share/endeavouros/backgrounds/endeavouros-wallpaper.png
 
-# set powersavings for display:
-exec --no-startup-id xset s 300 -dpms
+# keep the screen on at all times — no screensaver blanking, no DPMS power-off
+exec --no-startup-id xset s off
+exec --no-startup-id xset -dpms
+exec --no-startup-id xset s noblank
 exec_always --no-startup-id pkill -x xss-lock; xss-lock --transfer-sleep-lock -- ~/.config/i3/scripts/idle-lock.sh &
 exec_always --no-startup-id ~/.config/i3/scripts/idle-inhibitor.sh
 
@@ -401,9 +408,9 @@ client.background        $m_bg0
 
 ## rofi bindings fancy application menu ($mod+d /F9 optional disabled)
 
-bindsym $mod+d exec --no-startup-id rofi -modi "drun,appimages:~/.config/rofi/scripts/rofi-appimages" -show drun
+bindsym $mod+d exec --no-startup-id rofi -show drun
 
-bindsym F9 exec --no-startup-id rofi -modi "drun,appimages:~/.config/rofi/scripts/rofi-appimages" -show drun
+bindsym F9 exec --no-startup-id rofi -show drun
 
 ## rofi bindings for window menu ($mod+t /F10 optional disabled)
 

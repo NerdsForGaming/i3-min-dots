@@ -1,72 +1,118 @@
 #!/usr/bin/env bash
-# Themed bluetoothctl-driven bluetooth manager. Bound to the polybar
-# bluetooth module's left-click.
+# Themed bluetoothctl manager.
+#
+# Same display-vs-key pattern as rofi-network: the displayed line and
+# the underlying action / MAC live in a TAB-separated lookup table.
 
 set -u
 
 THEME="${RICE_ROFI_THEME:-$HOME/.config/rofi/config.rasi}"
-pick() { rofi -dmenu -i -theme "$THEME" -no-custom -format 's' "$@"; }
-notify() { command -v notify-send >/dev/null && notify-send "$@" || true; }
+notify() { command -v notify-send >/dev/null && notify-send "bluetooth" "$@" || true; }
+pick()   { rofi -dmenu -i -theme "$THEME" -no-custom -format 's' "$@"; }
 
+# ─── not installed? Offer the install command. ────────────────────
 if ! command -v bluetoothctl >/dev/null; then
-    rofi -e "bluetoothctl not installed.\nInstall bluez and bluez-utils." \
-         -theme "$THEME"
-    exit 1
+    msg="bluez isn't installed yet.
+Install it with:
+
+  sudo pacman -S bluez bluez-utils"
+    choice=$(printf '%s\n%s\n' \
+        "󰗀    copy install command" \
+        "  dismiss" | pick -p "  bluetooth" -mesg "$msg")
+    if [[ "$choice" == *"copy"* ]] && command -v xclip >/dev/null; then
+        printf 'sudo pacman -S bluez bluez-utils' | xclip -selection clipboard
+        notify "install command copied to clipboard"
+    fi
+    exit 0
+fi
+
+# ─── no adapter? ──────────────────────────────────────────────────
+if ! bluetoothctl show 2>/dev/null | grep -q '^Controller'; then
+    rofi -e "no bluetooth adapter detected." -theme "$THEME"
+    exit 0
 fi
 
 powered=$(bluetoothctl show | awk '/Powered:/ {print $2; exit}')
 
-entries=()
+TABLE=$(mktemp)
+trap 'rm -f "$TABLE"' EXIT
+
+{
+    if [ "$powered" = "yes" ]; then
+        printf '%s\t%s\n' "󰂲    turn bluetooth off" "ACT:power-off"
+        printf '%s\t%s\n' "󰂰    scan for 8s"        "ACT:scan"
+    else
+        printf '%s\t%s\n' "    turn bluetooth on" "ACT:power-on"
+    fi
+    printf '%s\t%s\n' "──────────────────────────────────────────" "ACT:nop"
+
+    if [ "$powered" = "yes" ]; then
+        # Paired devices first (connected ones marked).
+        while IFS= read -r line; do
+            mac=$(awk '{print $2}' <<<"$line")
+            name=$(cut -d' ' -f3- <<<"$line")
+            [ -z "$mac" ] && continue
+            connected=$(bluetoothctl info "$mac" 2>/dev/null \
+                        | awk '/Connected:/ {print $2; exit}')
+            [ "$connected" = "yes" ] && marker="●" || marker="▪"
+            short=$(printf '%-28.28s' "$name")
+            printf '%s  %s  %s\tDEV:%s\n' "$marker" "$short" "$mac" "$mac"
+        done < <(bluetoothctl devices Paired 2>/dev/null)
+
+        # Then discovered-but-not-paired.
+        while IFS= read -r line; do
+            mac=$(awk '{print $2}' <<<"$line")
+            name=$(cut -d' ' -f3- <<<"$line")
+            [ -z "$mac" ] && continue
+            short=$(printf '%-28.28s' "$name")
+            printf '%s  %s  %s\tDEV:%s\n' "+" "$short" "$mac" "$mac"
+        done < <(bluetoothctl devices 2>/dev/null \
+                 | grep -vxFf <(bluetoothctl devices Paired 2>/dev/null))
+    fi
+} > "$TABLE"
+
 if [ "$powered" = "yes" ]; then
-    entries+=("[~] Bluetooth: ON  → click to turn off")
-    entries+=("[~] Scan 5s for new devices")
-    entries+=("[~] ─── paired ───")
-    while IFS=$' ' read -r _ mac name; do
-        [ -z "$mac" ] && continue
-        is_conn=$(bluetoothctl info "$mac" 2>/dev/null \
-                  | awk '/Connected:/ {print $2; exit}')
-        if [ "$is_conn" = "yes" ]; then
-            entries+=("  $name  [$mac]")
-        else
-            entries+=("  $name  [$mac]")
-        fi
-    done < <(bluetoothctl devices Paired 2>/dev/null)
+    n=$(bluetoothctl devices Connected 2>/dev/null | awk '{$1=$2=""; sub(/^  /,""); print}' | head -1)
+    mesg="bluetooth: <b>ON</b>"
+    [ -n "$n" ] && mesg="$mesg   ·   <b>$n</b>"
 else
-    entries+=("[~] Bluetooth: OFF  → click to turn on")
+    mesg="bluetooth: <b>OFF</b>"
 fi
 
-choice=$(printf '%s\n' "${entries[@]}" | pick -p "  bluetooth" -mesg "Pick a device or [~] action")
+choice=$(cut -f1 < "$TABLE" | pick -p "  bluetooth" -mesg "$mesg")
 [ -z "$choice" ] && exit 0
 
-case "$choice" in
-    "[~] Bluetooth: ON  → click to turn off")
-        bluetoothctl power off >/dev/null
-        ;;
-    "[~] Bluetooth: OFF  → click to turn on")
-        bluetoothctl power on >/dev/null
-        ;;
-    "[~] Scan 5s for new devices")
-        notify "bluetooth" "Scanning..."
-        bluetoothctl --timeout 5 scan on >/dev/null 2>&1
-        # Re-launch self so the new devices show up.
+key=$(awk -F'\t' -v line="$choice" '$1 == line {print $2; exit}' "$TABLE")
+[ -z "$key" ] && exit 0
+
+case "$key" in
+    ACT:power-off)  bluetoothctl power off >/dev/null ;;
+    ACT:power-on)   bluetoothctl power on  >/dev/null; sleep 1; exec "$0" ;;
+    ACT:scan)
+        notify "scanning..."
+        bluetoothctl --timeout 8 scan on >/dev/null 2>&1
         exec "$0"
         ;;
-    "[~] ─── paired ───")
-        exit 0
-        ;;
-    *)
-        # Extract MAC from "...  [AA:BB:..]"
-        mac=$(printf '%s' "$choice" | sed -nE 's/.*\[([0-9A-F:]+)\].*/\1/p')
-        [ -z "$mac" ] && exit 0
-        is_conn=$(bluetoothctl info "$mac" 2>/dev/null \
-                  | awk '/Connected:/ {print $2; exit}')
-        if [ "$is_conn" = "yes" ]; then
+    ACT:nop)        : ;;
+    DEV:*)
+        mac=${key#DEV:}
+        connected=$(bluetoothctl info "$mac" 2>/dev/null \
+                    | awk '/Connected:/ {print $2; exit}')
+        if [ "$connected" = "yes" ]; then
             bluetoothctl disconnect "$mac" >/dev/null \
-                && notify "bluetooth" "Disconnected $mac"
+                && notify "disconnected $mac"
         else
-            bluetoothctl connect "$mac" >/dev/null \
-                && notify "bluetooth" "Connected $mac" \
-                || notify "bluetooth" "Connect failed: $mac"
+            paired=$(bluetoothctl info "$mac" 2>/dev/null \
+                     | awk '/Paired:/ {print $2; exit}')
+            if [ "$paired" != "yes" ]; then
+                # Pair + trust before connecting so reconnects are
+                # automatic next time.
+                bluetoothctl pair "$mac" >/dev/null 2>&1 || true
+                bluetoothctl trust "$mac" >/dev/null 2>&1 || true
+            fi
+            bluetoothctl connect "$mac" >/dev/null 2>&1 \
+                && notify "connected $mac" \
+                || notify "connect failed: $mac"
         fi
         ;;
 esac

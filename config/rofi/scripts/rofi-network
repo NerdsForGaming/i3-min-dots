@@ -1,96 +1,119 @@
 #!/usr/bin/env bash
-# Themed nmcli-driven network picker. Bound to the polybar network
-# module's left-click. Uses the main rofi theme for visual match.
+# Themed nmcli wifi picker.
+#
+# The displayed line and the underlying SSID are stored as TAB-separated
+# columns in $TABLE. rofi sees only the display column; after the user
+# picks one we look the SSID back up by exact display-line match, so
+# SSIDs with spaces / colons / unicode all survive intact.
 
 set -u
 
 THEME="${RICE_ROFI_THEME:-$HOME/.config/rofi/config.rasi}"
+notify() { command -v notify-send >/dev/null && notify-send "wifi" "$@" || true; }
+pick()   { rofi -dmenu -i -theme "$THEME" -no-custom -format 's' "$@"; }
+ask_pw() { rofi -dmenu -password -theme "$THEME" -p "  $1" -lines 0 -format 's'; }
 
-pick() {
-    rofi -dmenu -i -theme "$THEME" -no-custom -format 's' "$@"
-}
+TABLE=$(mktemp)
+trap 'rm -f "$TABLE"' EXIT
 
-prompt_pw() {
-    rofi -dmenu -password -theme "$THEME" -p "  $1" -lines 0 -format 's'
-}
-
-notify() { command -v notify-send >/dev/null && notify-send "$@" || true; }
+# Kick off a background rescan; the popup uses the current cache.
+nmcli device wifi rescan >/dev/null 2>&1 &
 
 wifi_state=$(nmcli -t -f WIFI radio 2>/dev/null)
-[ -z "$wifi_state" ] && wifi_state="disabled"
+active_ssid=$(nmcli -t -f IN-USE,SSID device wifi 2>/dev/null \
+              | awk -F: '$1 == "*" {sub(/^\*:/,""); print; exit}')
 
-# Build the entry list. Header items use a leading character that's
-# easy to grep back when reading the user's choice.
-entries=()
-case "$wifi_state" in
-    enabled)  entries+=("[~] Toggle wifi: ON") ;;
-    *)        entries+=("[~] Toggle wifi: OFF") ;;
-esac
-entries+=("[~] Disconnect active")
-entries+=("[~] ─── networks ───")
+# ─── action rows (display\t<action-key>) ─────────────────────────
+{
+    if [ "$wifi_state" = "enabled" ]; then
+        printf '%s\t%s\n' "󰖪    turn wifi off" "ACT:wifi-off"
+        printf '%s\t%s\n' "󰑐    rescan"        "ACT:rescan"
+        [ -n "$active_ssid" ] && \
+            printf '%s\t%s\n' "󰖪    disconnect from $active_ssid" "ACT:disconnect"
+    else
+        printf '%s\t%s\n' "󰖩    turn wifi on" "ACT:wifi-on"
+    fi
+    printf '%s\t%s\n' "──────────────────────────────────────────" "ACT:nop"
 
+    # ─── network rows ────────────────────────────────────────────
+    if [ "$wifi_state" = "enabled" ]; then
+        nmcli --colors=no -t -e yes -f IN-USE,SIGNAL,SECURITY,SSID device wifi list 2>/dev/null \
+        | awk -F: '!seen[$4]++ && $4!=""' \
+        | sort -t: -k2 -nr \
+        | while IFS=: read -r in_use sig sec ssid; do
+            ssid=${ssid//\\:/:}
+            ssid=${ssid//\\\\/\\}
+            case "${sig:-0}" in
+                ''|[0-9])    icon="󰤟" ;;
+                [1-3][0-9])  icon="󰤢" ;;
+                [4-6][0-9])  icon="󰤥" ;;
+                *)           icon="󰤨" ;;
+            esac
+            [ "$in_use" = "*" ] && marker="●" || marker=" "
+            if [ -n "$sec" ] && [ "$sec" != "--" ]; then
+                lock="󰌾"
+            else
+                lock=" "
+            fi
+            short=$(printf '%-24.24s' "$ssid")
+            printf '%s  %s  %s  %s\tNET:%s\n' "$marker" "$icon" "$short" "$lock" "$ssid"
+        done
+    fi
+} > "$TABLE"
+
+# ─── show menu (display column only) ─────────────────────────────
 if [ "$wifi_state" = "enabled" ]; then
-    while IFS=$'\t' read -r in_use ssid sig sec; do
-        [ -z "$ssid" ] && continue
-        case "${sig:-0}" in
-            ''|0|[0-9]) bars="▂   " ;;
-            [1-3][0-9]) bars="▂▄  " ;;
-            [4-6][0-9]) bars="▂▄▆ " ;;
-            *)          bars="▂▄▆█" ;;
-        esac
-        marker=" "
-        [ "$in_use" = "*" ] && marker=""
-        lock=" "
-        [ -n "$sec" ] && [ "$sec" != "--" ] && lock=""
-        entries+=("$marker $bars $lock  $ssid")
-    done < <(nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list 2>/dev/null \
-             | awk -F: '!seen[$2]++' )
+    mesg="wifi: <b>ON</b>"
+    [ -n "$active_ssid" ] && mesg="$mesg   ·   <b>$active_ssid</b>"
+else
+    mesg="wifi: <b>OFF</b>"
 fi
 
-choice=$(printf '%s\n' "${entries[@]}" | pick -p "  network" -mesg "Pick a network, [~] for actions")
-
+choice=$(cut -f1 < "$TABLE" | pick -p "  wifi" -mesg "$mesg")
 [ -z "$choice" ] && exit 0
 
-case "$choice" in
-    "[~] Toggle wifi: ON")
-        nmcli radio wifi off
+# Look up the action / SSID by exact display-line match.
+key=$(awk -F'\t' -v line="$choice" '$1 == line {print $2; exit}' "$TABLE")
+[ -z "$key" ] && exit 0
+
+case "$key" in
+    ACT:wifi-off)     nmcli radio wifi off ;;
+    ACT:wifi-on)      nmcli radio wifi on; sleep 1; exec "$0" ;;
+    ACT:rescan)       nmcli device wifi rescan >/dev/null 2>&1 || true
+                      sleep 2; exec "$0" ;;
+    ACT:disconnect)
+        [ -n "$active_ssid" ] && nmcli c down id "$active_ssid" >/dev/null 2>&1 \
+            && notify "Disconnected $active_ssid"
         ;;
-    "[~] Toggle wifi: OFF")
-        nmcli radio wifi on
-        ;;
-    "[~] Disconnect active")
-        active=$(nmcli -t -f NAME c show --active | head -1)
-        [ -n "$active" ] && nmcli c down "$active"
-        ;;
-    "[~] ─── networks ───")
-        exit 0
-        ;;
-    *)
-        # Strip the leading marker/bars/lock; everything after the
-        # last double-space is the SSID.
-        ssid=$(printf '%s' "$choice" | sed -E 's/^[^A-Za-z0-9]+//; s/^[▂▄▆█ ]+//; s/^[  ]+//')
-        # Already saved? -> just bring it up.
-        if nmcli -t -f NAME c show | grep -Fxq "$ssid"; then
-            nmcli c up "$ssid" >/dev/null 2>&1 \
-                && notify "wifi" "Connected to $ssid" \
-                || notify "wifi" "Failed to connect to $ssid"
+    ACT:nop)          : ;;
+    NET:*)
+        ssid=${key#NET:}
+
+        # Known profile? Just bring it up.
+        if nmcli -t -f NAME c show 2>/dev/null | grep -Fxq "$ssid"; then
+            if nmcli c up id "$ssid" >/dev/null 2>&1; then
+                notify "Connected to $ssid"
+            else
+                notify "Failed to connect to $ssid"
+            fi
             exit 0
         fi
-        # Secure network? Ask for password.
-        sec=$(nmcli -t -f SSID,SECURITY device wifi list 2>/dev/null \
-              | awk -F: -v s="$ssid" '$1 == s {print $2; exit}')
+
+        # New AP — secured?
+        sec=$(nmcli -t -e yes -f SSID,SECURITY device wifi list 2>/dev/null \
+              | awk -F: '
+                  { s=$1; gsub(/\\:/,":",s); gsub(/\\\\/,"\\",s) }
+                  s == ssid {print $2; exit}' ssid="$ssid")
         if [ -n "$sec" ] && [ "$sec" != "--" ]; then
-            pw=$(prompt_pw "password for $ssid")
+            pw=$(ask_pw "password for $ssid")
             [ -z "$pw" ] && exit 0
-            if nmcli d wifi connect "$ssid" password "$pw" >/dev/null 2>&1; then
-                notify "wifi" "Connected to $ssid"
-            else
-                notify "wifi" "Failed to connect to $ssid"
-            fi
+            nmcli d wifi connect "$ssid" password "$pw" >/dev/null 2>&1 \
+                && notify "Connected to $ssid" \
+                || notify "Failed to connect to $ssid"
         else
             nmcli d wifi connect "$ssid" >/dev/null 2>&1 \
-                && notify "wifi" "Connected to $ssid" \
-                || notify "wifi" "Failed to connect to $ssid"
+                && notify "Connected to $ssid" \
+                || notify "Failed to connect to $ssid"
         fi
         ;;
 esac
